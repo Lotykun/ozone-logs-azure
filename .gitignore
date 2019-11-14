@@ -1,2 +1,6 @@
 *.log
 /.htaccess
+/composer.lock
+/credentials.php
+vendor
+/.idea
