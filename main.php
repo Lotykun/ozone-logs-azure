@@ -9,6 +9,76 @@ use MicrosoftAzure\Storage\Blob\Models\ListBlobsOptions;
 $connectionString = $credentialString;
 $containers = $containersArray;
 
+function downloadBlobsSample($blobClient, $container, $app, $fileLogName, $dateStartTime, $dateEndTime)
+{
+    $creatingFile = False;
+    // List blobs.
+    $containerSearch = "uwproozndwa0" . $container;
+    $dateStartFile = clone $dateStartTime;
+    $dateStartFile->modify('+1 hour');
+    $dateEndFile = clone $dateEndTime;
+    $dateEndFile->modify('+1 hour');
+    $prefix = strtolower($app) . '/' . $dateStartFile->format('Y') . '/' . $dateStartFile->format('m');
+    $prefix .= "/" . $fileLogName;
+    $listBlobsOptions = new ListBlobsOptions();
+    $listBlobsOptions->setPrefix($prefix);
+    $listBlobsOptions->setMaxResults(100);
+    $tempPath = 'logs/tmp/';
+    if (!is_dir($tempPath)) {
+        mkdir($tempPath, 0777, true);
+    }
+    $path = 'logs/' . strtolower($app) .'/'. $dateStartTime->format('Y') . '/' . $dateStartTime->format('m') . '/' .
+        $dateStartTime->format('d') . '/' . $dateStartTime->format('H:i') . '-' . $dateEndTime->format('H:i') . '/frontal_0' . $container . '/';
+    if (!is_dir($path)) {
+        mkdir($path, 0777, true);
+    }
+    $fileName = $path . '0' . $container . '_' . $fileLogName . '.log';
+    do {
+        //global $myContainer;
+        $blob_list = $blobClient->listBlobs($containerSearch, $listBlobsOptions);
+        /** @var \MicrosoftAzure\Storage\Blob\Models\Blob $blob */
+        foreach ($blob_list->getBlobs() as $blob) {
+            $name = $blob->getName();
+            /** @var \MicrosoftAzure\Storage\Blob\Models\BlobProperties $properties */
+            $properties = $blob->getProperties();
+            $lastModifiedStart = $properties->getLastModified();
+            $lastModifiedEnd = clone $lastModifiedStart;
+            $lastModifiedStart->modify('+1 hour');
+            if ($dateStartTime->format('Y-m-d H:i:s') <= $lastModifiedStart->format('Y-m-d H:i:s') &&
+                $dateEndTime->format('Y-m-d H:i:s') >= $lastModifiedEnd->format('Y-m-d H:i:s')){
+                $pathinfo = pathinfo($name);
+                $getBlobResult = $blobClient->getBlob($containerSearch, $blob->getName());
+
+                $tempFile = $tempPath . $pathinfo['basename'] . '.log';
+                file_put_contents($tempFile, $getBlobResult->getContentStream());
+                $handle = fopen($tempFile,'r') or die ('File opening failed');
+
+                while (!feof($handle)) {
+                    $dd = fgets($handle);
+                    $arr = preg_split('/\h*[][]/', $dd, -1, PREG_SPLIT_NO_EMPTY);
+                    if (is_array($arr) && count($arr) > 1){
+                        $dateLog = new \DateTime ($arr[0]);
+                        if ($dateStartTime->format('Y-m-d H:i:s') <= $dateLog->format('Y-m-d H:i:s') &&
+                            $dateEndTime->format('Y-m-d H:i:s') >= $dateLog->format('Y-m-d H:i:s')){
+                            if (!$creatingFile){
+                                $creatingFile = TRUE;
+                            }
+                            @file_put_contents($fileName, $dd, FILE_APPEND);
+                        }
+                    }
+                }
+                fclose($handle);
+                unlink($tempFile);
+            }
+        }
+        $listBlobsOptions->setContinuationToken($blob_list->getContinuationToken());
+    } while ($blob_list->getContinuationToken());
+    if ($creatingFile) {
+        echo 'FILE: ' . $fileName . ' CREATED!!' . PHP_EOL;
+    }
+    return $creatingFile;
+}
+
 if (isset($argv) && count($argv) > 1){
     if (isset($argv[1]) && !empty($argv[1])) {
         if ($argv[1] === "ozone" ||  $argv[1] === "ocp") {
@@ -22,36 +92,19 @@ if (isset($argv) && count($argv) > 1){
     }
 
     if (isset($argv[2]) && !empty($argv[2])) {
-        if (preg_match("/^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[1-2][0-9]|3[0-1])$/",$argv[2])) {
-            $date = $argv[2];
-        } else {
-            echo 'Date Argument must be set and with format (yyyy-mm-dd).' .PHP_EOL;
-            exit;
-        }
+        $dateStartTime = new \DateTime($argv[2]);
     } else {
         echo 'Date Argument must be set and with format (yyyy-mm-dd).' .PHP_EOL;
     }
 
     if (isset($argv[3]) && !empty($argv[3])) {
-        if (preg_match("/^(2[0-3]|[01][0-9]):[0-5][0-9]$/", $argv[3])) {
-            $startTime = $argv[3];
-        } else {
-            echo 'StartTime Argument must be set and with format (HH:MM).' .PHP_EOL;
-            exit;
-        }
+        $dateEndTime = new \DateTime($argv[3]);
     } else {
         echo 'Date Argument must be set and with format (yyyy-mm-dd).' .PHP_EOL;
     }
 
     if (isset($argv[4]) && !empty($argv[4])) {
-        if (preg_match("/^(2[0-3]|[01][0-9]):[0-5][0-9]$/", $argv[4])) {
-            $endTime = $argv[4];
-        } else {
-            echo 'StartTime Argument must be set and with format (HH:MM).' .PHP_EOL;
-            exit;
-        }
-    } else {
-        echo 'Date Argument must be set and with format (yyyy-mm-dd).' .PHP_EOL;
+        $fileLogNameParam = $argv[4];
     }
 } else {
     echo 'TO RUN THIS SCRIPT YOU MUST SET THE ARGUMENTS' .PHP_EOL;
@@ -61,70 +114,20 @@ if (isset($argv) && count($argv) > 1){
 $blobClient = BlobRestProxy::createBlobService($connectionString);
 $count = 0;
 foreach ($containers as $container) {
-    $count += downloadBlobsSample($blobClient, $container, $date, $app, $startTime, $endTime);
+    echo '*** FRONTAL 0' . $container . ' ****' . PHP_EOL;
+    if (isset($fileLogNameParam)) {
+        if (downloadBlobsSample($blobClient, $container, $app, $fileLogNameParam, $dateStartTime, $dateEndTime)){
+            $count++;
+        }
+    } else {
+        foreach ($fileNamesArray[$app] as $fileLogName){
+            if (downloadBlobsSample($blobClient, $container, $app, $fileLogName, $dateStartTime, $dateEndTime)){
+                $count++;
+            }
+        }
+    }
+    echo PHP_EOL;
 }
 
 echo 'Total Files number: ' .$count.PHP_EOL;
-
-function downloadBlobsSample($blobClient, $container, $date, $app, $startTime = null, $endTime = null)
-{
-    $count = 0;
-    try {
-        // List blobs.
-        $dateExploded = explode('-',$date);
-        $prefix = strtolower($app).'/'.$dateExploded[0].'/'.$dateExploded[1];
-        $listBlobsOptions = new ListBlobsOptions();
-        $listBlobsOptions->setPrefix($prefix);
-        $listBlobsOptions->setMaxResults(100);
-        do {
-            //global $myContainer;
-            $blob_list = $blobClient->listBlobs($container, $listBlobsOptions);
-            foreach ($blob_list->getBlobs() as $blob) {
-                if (strpos($blob->getName(), $date) !== false) {
-                    $pathinfo = pathinfo($blob->getName());
-                    $timeInfo = explode("-",$pathinfo['extension']);
-                    $delimitersTimeInfo = count($timeInfo);
-                    $dateStartTime = strtotime($date . " " .$startTime);
-                    $controlStartTime = date('Y-m-d H:i', $dateStartTime);
-                    $dateEndTime = strtotime($date . " " .$endTime) + 60*60;
-                    $controlEndTime = date('Y-m-d H:i', $dateEndTime);
-
-                    $dayLogFile = intval($timeInfo[$delimitersTimeInfo - 3]);
-                    $monthLogFile = intval($timeInfo[$delimitersTimeInfo - 4]);
-                    $yearLogFile = intval($timeInfo[$delimitersTimeInfo - 5]);
-                    $preLogHourFile = intval($timeInfo[$delimitersTimeInfo - 2]) - 1;
-                    $logHourFile = ($preLogHourFile < 0) ? 23 : $preLogHourFile;
-                    $logMinuteFile = intval($timeInfo[$delimitersTimeInfo - 1]);
-
-                    $fileStringTime = $yearLogFile . "-" . sprintf("%02d", $monthLogFile) . "-" . sprintf("%02d", $dayLogFile) . " " . sprintf("%02d", $logHourFile) . ":" . sprintf("%02d", $logMinuteFile);
-                    $fileTime = ($preLogHourFile < 0) ? strtotime('-1 day', strtotime($fileStringTime)) : strtotime($fileStringTime);
-                    $controlFileTime = date('Y-m-d H:i', $fileTime);
-                    if ($controlFileTime > $controlStartTime && $controlFileTime < $controlEndTime) {
-                        $path = 'logs/' . $pathinfo['dirname'] .'/'. $dateExploded[2] . '/' . $startTime . '-' . $endTime . '/' . $container;
-                        if (!is_dir($path)) {
-                            // dir doesn't exist, make it
-                            mkdir($path, 0755, true);
-                        }
-                        $filename = $path . "/" .  $pathinfo['filename'];
-                        $getBlobResult = $blobClient->getBlob($container, $blob->getName());
-                        if (!file_exists($filename)) {
-                            file_put_contents($filename, $getBlobResult->getContentStream());
-                            echo $filename.PHP_EOL;
-                            $count++;
-                        } else {
-                            file_put_contents($filename, $getBlobResult->getContentStream(), FILE_APPEND);
-                        }
-                    }
-                }
-            }
-            $listBlobsOptions->setContinuationToken($blob_list->getContinuationToken());
-        } while ($blob_list->getContinuationToken());
-        echo PHP_EOL;
-    } catch (ServiceException $e) {
-        $code = $e->getCode();
-        $error_message = $e->getMessage();
-        echo $code.": ".$error_message.PHP_EOL;
-    }
-    return $count;
-}
 
