@@ -9,14 +9,20 @@ Instalacion:
 
 Ejecucion del script:
 
-El script tiene 4 argumentos TODOS OBLIGATORIOS
+El script tiene 4 argumentos
 
-    1.- Aplicacion: puede ser "ozone|ocp"
-    2.- Fecha: fecha para la busqueda de logs (yyyy-mm-dd)
-    3.- StartTime: Hora de inicio de los logs (HH:MM)
-    4.- EndTime: Hora de Fin de los logs (HH:MM)
+    1.- Aplicacion: puede ser "ozone|ocp" (OBLIGATORIO)
+    2.- Fecha inicio: Fecha Inicial para la busqueda de logs (yyyy-mm-dd H:i:s) (OBLIGATORIO)
+    3.- Fecha Final: Fecha Final para la busqueda de logs (yyyy-mm-dd H:i:s) (OBLIGATORIO)
+    4.- LogName: Dependiendo de la aplicacion (ocp | ozone) (OPCIONAL) puede ser 
+        ("prod.api.log.1","prod.backend.log.1","prod.frontend.log.1","prod.log.1","prod.payment.log.1")
 
 Ejemplo de ejecucion
 
-    php main.php ozone 2019-11-12 00:00 01:00
-    Este ejemplo busca todos los logs en todos los frontales para el dia 12 de noviembre entre las 00:00 y la 01:00 
+    php main.php ozone "2020-05-24 18:15" "2020-05-24 19:15" prod.log.1
+    Este ejemplo busca todos los logs del canal Prod.Log en todos los frontales para el dia 24 de Mayo
+    entre las 18:15 y las 19:15
+    
+    php main.php ozone "2020-05-24 18:15" "2020-05-24 19:15"
+    Este ejemplo busca todos los logs DE TODOS LOS CANALES en todos los frontales para el dia 24 de Mayo
+    entre las 18:15 y las 19:15 
